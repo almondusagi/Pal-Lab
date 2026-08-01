@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>パル配合ラボ - Palworld 配合・図鑑ツール</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1b2318">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <span class="mark">パル配合ラボ</span>
+    <span class="sub">Palworld 配合表 / モンスター図鑑 非公式支援ツール　<span id="data-version-tag" style="color:var(--accent-2)"></span></span>
+  </div>
+  <nav class="tabs">
+    <button data-view="dex" class="active">モンスター図鑑</button>
+    <button data-view="breed">配合検索</button>
+    <button data-view="reverse">逆引き検索</button>
+    <button data-view="route">継承ルート</button>
+    <button data-view="skills">スキル検索</button>
+    <button data-view="mydex">My図鑑</button>
+  </nav>
+</header>
+
+<main>
+
+  <!-- ================= 図鑑 ================= -->
+  <section class="view active" id="view-dex">
+    <h2 class="view-title">モンスター図鑑</h2>
+    <p class="view-desc">パル一覧です。カードをタップすると詳細（種族値・作業適性・ドロップ・スキル・配合ランク）を確認できます。</p>
+    <div class="toolbar">
+      <input type="text" id="dex-search" placeholder="パル名で検索（日本語 / English）">
+      <select id="dex-type-filter">
+        <option value="">全作業タイプ</option>
+      </select>
+      <span class="count-tag" id="dex-count"></span>
+    </div>
+    <div class="pal-grid" id="dex-grid"></div>
+  </section>
+
+  <!-- ================= 配合検索 ================= -->
+  <section class="view" id="view-breed">
+    <h2 class="view-title">配合検索</h2>
+    <p class="view-desc">2匹の親パルを選ぶと、生まれてくる子パルが分かります。</p>
+    <div class="panel">
+      <div class="grid-2">
+        <div>
+          <label style="font-size:12px;color:var(--ink-dim)">親パル A</label>
+          <div class="pal-picker" id="picker-a"></div>
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--ink-dim)">親パル B</label>
+          <div class="pal-picker" id="picker-b"></div>
+        </div>
+      </div>
+      <div id="breed-result"></div>
+    </div>
+  </section>
+
+  <!-- ================= 逆引き検索 ================= -->
+  <section class="view" id="view-reverse">
+    <h2 class="view-title">逆引き検索</h2>
+    <p class="view-desc">欲しい子パルを選ぶと、その子が生まれる親の組み合わせを全て一覧表示します。</p>
+    <div class="panel">
+      <label style="font-size:12px;color:var(--ink-dim)">欲しいパル</label>
+      <div class="pal-picker" id="picker-target"></div>
+      <div id="reverse-result"></div>
+    </div>
+  </section>
+
+  <!-- ================= 継承ルート ================= -->
+  <section class="view" id="view-route">
+    <h2 class="view-title">継承ルート（スキル継承探索）</h2>
+    <p class="view-desc">
+      スキルを持っている起点パルから、スキルを継承させたい目標パルへの最短配合ルートを探索します。<br>
+      途中で特定のパルを経由したい場合は「経由パル」を指定できます。
+    </p>
+    <div class="panel">
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        <div>
+          <label style="font-size:12px;color:var(--ink-dim); font-weight:bold;">起点パル（必須）</label>
+          <div class="pal-picker" id="picker-route-start"></div>
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--ink-dim)">経由パル（任意）</label>
+          <div class="pal-picker" id="picker-route-intermediate"></div>
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--ink-dim); font-weight:bold;">目標パル（必須）</label>
+          <div class="pal-picker" id="picker-route-target"></div>
+        </div>
+      </div>
+      <button class="btn" id="route-run-btn" style="margin-top:16px; width: 100%;">ルートを探す</button>
+      <div id="route-result"></div>
+    </div>
+  </section>
+
+  <!-- ================= スキル検索 ================= -->
+  <section class="view" id="view-skills">
+    <h2 class="view-title">スキル検索（パッシブスキル図鑑）</h2>
+    <p class="view-desc">パッシブスキルをジャンル・Rankで絞り込めます。（データ: 全115種の標準パッシブスキル）カード左の色はRankを表します。</p>
+    <div class="filter-group">
+      <div class="filter-group-label"><span>ジャンルで絞り込み</span><span class="links"><a id="cat-all-btn">全選択</a><a id="cat-none-btn">全解除</a></span></div>
+      <div class="chk-pills" id="skill-cats"></div>
+    </div>
+    <div class="filter-group">
+      <div class="filter-group-label"><span>Rankで絞り込み（虹=5 / 緑=4 / 黄=3・2 / 白=1 / 赤=-1以下）</span><span class="links"><a id="rank-all-btn">全選択</a><a id="rank-none-btn">全解除</a></span></div>
+      <div class="chk-pills" id="skill-ranks"></div>
+    </div>
+    <div class="skill-table" id="skill-table"></div>
+  </section>
+
+  <!-- ================= My図鑑 ================= -->
+  <section class="view" id="view-mydex">
+    <h2 class="view-title">My図鑑</h2>
+    <p class="view-desc">今持っているパルにチェックを入れてください。まだ持っていないパルの中で、今の手持ちだけで配合できるパルが自動で一覧表示されます。</p>
+    <div class="mydex-summary">
+      <div class="mydex-stat"><div class="v" id="owned-count">0</div><div class="l">所有パル数</div></div>
+      <div class="mydex-stat" style="cursor: pointer;" onclick="document.getElementById('discover-section-title').scrollIntoView({behavior:'smooth', block:'start'})" title="クリックで一覧へジャンプ"><div class="v" id="discover-count">0</div><div class="l">配合で作れる未所持パル</div></div>
+    </div>
+    <div class="mydex-csv-row">
+      <button class="btn secondary" id="mydex-export-btn">CSVエクスポート</button>
+      <button class="btn secondary" id="mydex-import-btn">CSVインポート</button>
+      <input type="file" id="mydex-import-file" accept=".csv" style="display:none;">
+      <button class="btn danger" id="mydex-clear-btn">リセット</button>
+    </div>
+    <div class="mydex-bulk-row" style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+      <button class="btn" id="mydex-check-all-btn">全てにチェック</button>
+      <div style="display:flex; gap: 5px; align-items: center;">
+        <input type="number" id="mydex-bulk-start" placeholder="No." style="width: 70px;">
+        <span>～</span>
+        <input type="number" id="mydex-bulk-end" placeholder="No." style="width: 70px;">
+        <button class="btn" id="mydex-bulk-check-btn">一括チェック</button>
+        <span style="font-size: 12px; color: var(--ink-dim);">（※亜種のみ手動）</span>
+      </div>
+    </div>
+    <div class="mydex-exclude-row" style="margin-top: 5px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; background: var(--bg-card); padding: 8px; border-radius: 6px; border: 1px solid var(--border);">
+      <div style="display:flex; gap: 5px; align-items: center;">
+        <span style="font-size: 13px; color: var(--ink-dim);">除外No.:</span>
+        <input type="number" id="mydex-exclude-input" placeholder="No." style="width: 70px;">
+        <button class="btn secondary" id="mydex-exclude-add-btn" style="padding: 4px 8px; font-size: 12px;">追加</button>
+        <button class="btn secondary" id="mydex-exclude-clear-btn" style="padding: 4px 8px; font-size: 12px;">クリア</button>
+      </div>
+      <div id="mydex-exclude-list" style="display: flex; gap: 5px; flex-wrap: wrap; min-height: 24px; align-items: center;">
+        <span style="font-size: 12px; color: var(--ink-dim);">（除外なし）</span>
+      </div>
+    </div>
+    <div class="toolbar" style="margin-top: 10px;">
+      <input type="text" id="mydex-search" placeholder="パル名で検索">
+      <span class="count-tag">チェックして所持登録</span>
+    </div>
+    <div class="pal-grid" id="mydex-grid"></div>
+
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top:32px; margin-bottom: 4px;">
+      <h2 class="view-title" id="discover-section-title" style="margin: 0;">配合で作れる未所持パル</h2>
+      <a href="javascript:void(0)" onclick="document.getElementById('view-mydex').scrollIntoView({behavior:'smooth', block:'start'})" style="font-size: 13px; color: var(--accent); text-decoration: none; padding-bottom: 2px;">↑ 画面上部に戻る</a>
+    </div>
+    <div class="discover-grid" id="discover-grid"></div>
+  </section>
+
+</main>
+
+<footer class="credit">
+  データ出典: パル基礎データ・配合力・パッシブスキル（公式ローカライズ日本語名/説明込み）は PalCalc（MITライセンス、Palworld 1.0 データマイニング）の公開データセットを使用。配合結果は実際のゲーム内配合式（配合力の平均に最も近いパルが生まれる）をこのツール内で計算しており、固定の組み合わせ表ではありません。属性（炎・水など）やドロップ品、アクティブスキル一覧は今回のデータ更新にはまだ含まれていません。<br>
+  本ツールは非公式のファン制作ツールです。全データはお使いの端末内（localStorage）にのみ保存され、外部送信は行いません。
+</footer>
+
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<div class="modal-backdrop" id="confirm-backdrop">
+  <div class="modal confirm-modal" id="confirm-modal">
+    <p id="confirm-message"></p>
+    <div class="confirm-actions">
+      <button class="btn secondary" id="confirm-cancel-btn">キャンセル</button>
+      <button class="btn danger" id="confirm-yes-btn">はい</button>
+    </div>
+  </div>
+</div>
+
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
