@@ -602,6 +602,7 @@ function renderMydexGrid(){
       if(check.checked) ownedSet.add(key); else ownedSet.delete(key);
       saveOwned(ownedSet);
       updateMydexSummary();
+      renderDiscover();
     });
     card.addEventListener('click', (e)=>{
       if(e.target.classList.contains('owned-check')) return;
@@ -681,6 +682,7 @@ document.getElementById('mydex-import-file').addEventListener('change', (e)=>{
         saveOwned(ownedSet);
         renderMydexGrid();
         updateMydexSummary();
+        renderDiscover();
       });
     }catch(err){
       showConfirm('CSVの読み込みに失敗しました。ファイル形式をご確認ください。', ()=>{});
@@ -689,6 +691,86 @@ document.getElementById('mydex-import-file').addEventListener('change', (e)=>{
     }
   };
   reader.readAsText(file, 'UTF-8');
+});
+
+/* ---------- 一括チェック用: 除外No.リスト ---------- */
+let excludeSet = new Set();
+
+function renderExcludeList(){
+  const container = document.getElementById('mydex-exclude-list');
+  if(excludeSet.size === 0){
+    container.innerHTML = '<span style="font-size:12px;color:var(--ink-dim);">（除外なし）</span>';
+    return;
+  }
+  const nums = Array.from(excludeSet).sort((a,b)=>a-b);
+  container.innerHTML = nums.map(n=>`
+    <span class="tag" style="display:inline-flex;align-items:center;gap:4px;">
+      No.${n}<a href="javascript:void(0)" data-num="${n}" class="exclude-remove" style="color:var(--danger);text-decoration:none;font-weight:700;">×</a>
+    </span>
+  `).join('');
+  container.querySelectorAll('.exclude-remove').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      excludeSet.delete(Number(el.dataset.num));
+      renderExcludeList();
+    });
+  });
+}
+renderExcludeList();
+
+document.getElementById('mydex-exclude-add-btn').addEventListener('click', ()=>{
+  const input = document.getElementById('mydex-exclude-input');
+  const n = parseInt(input.value, 10);
+  if(!isNaN(n)){
+    excludeSet.add(n);
+    input.value = '';
+    renderExcludeList();
+  }
+});
+document.getElementById('mydex-exclude-input').addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter') document.getElementById('mydex-exclude-add-btn').click();
+});
+document.getElementById('mydex-exclude-clear-btn').addEventListener('click', ()=>{
+  excludeSet.clear();
+  renderExcludeList();
+});
+
+function applyOwnedChange(){
+  saveOwned(ownedSet);
+  renderMydexGrid();
+  updateMydexSummary();
+  renderDiscover();
+}
+
+/* ---------- 全てにチェック（亜種・除外Noを除く） ---------- */
+document.getElementById('mydex-check-all-btn').addEventListener('click', ()=>{
+  showConfirm('図鑑No.順の全パルにチェックを入れます（亜種・除外指定Noは対象外）。よろしいですか？', ()=>{
+    palList.forEach(p=>{
+      if(p.is_variant) return;
+      if(excludeSet.has(p.dex_no)) return;
+      ownedSet.add(p.key);
+    });
+    applyOwnedChange();
+  });
+});
+
+/* ---------- No.範囲での一括チェック（亜種・除外Noを除く） ---------- */
+document.getElementById('mydex-bulk-check-btn').addEventListener('click', ()=>{
+  const startVal = document.getElementById('mydex-bulk-start').value;
+  const endVal = document.getElementById('mydex-bulk-end').value;
+  const start = parseInt(startVal, 10);
+  const end = parseInt(endVal, 10);
+  if(isNaN(start) || isNaN(end)){
+    showConfirm('開始と終了のNo.を入力してください。', ()=>{});
+    return;
+  }
+  const lo = Math.min(start, end), hi = Math.max(start, end);
+  palList.forEach(p=>{
+    if(p.is_variant) return;
+    if(p.dex_no < lo || p.dex_no > hi) return;
+    if(excludeSet.has(p.dex_no)) return;
+    ownedSet.add(p.key);
+  });
+  applyOwnedChange();
 });
 
 function updateMydexSummary(){ document.getElementById('owned-count').textContent = ownedSet.size; }
