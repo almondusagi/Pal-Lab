@@ -74,6 +74,10 @@ let secretAppearance = loadBoolSetting(SECRET_APPEARANCE_KEY, true);
 let secretName = loadBoolSetting(SECRET_NAME_KEY, true);
 function isPalSecret(p){ return !ownedSet.has(p.key); }
 
+/* My図鑑グリッド自体でも、まだチェックしていないパルの名前を隠せるようにする（ネタバレ防止） */
+const MYDEX_SECRET_NAME_KEY = 'palbreed_mydex_secret_name_v1';
+let mydexSecretName = loadBoolSetting(MYDEX_SECRET_NAME_KEY, true);
+
 /* ---------- helpers ---------- */
 function hiraToKata(s){
   return s.replace(/[\u3041-\u3096]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60));
@@ -376,10 +380,58 @@ function createPalMultiPicker(container, {placeholder='パル名で検索', maxI
 /* ==================== 配合検索 ==================== */
 const pickerA = createPalPicker(document.getElementById('picker-a'), {onChange: updateBreedResult});
 const pickerB = createPalPicker(document.getElementById('picker-b'), {onChange: updateBreedResult});
+
+function renderSinglePartnerCombos(fixedKey, label){
+  const fixed = palByKey.get(fixedKey);
+  const resultEl = document.getElementById('breed-result');
+  const rows = palList.map(partner=>{
+    const childKey = getChild(fixedKey, partner.key);
+    return { partner, child: palByKey.get(childKey) };
+  });
+
+  const PAGE_SIZE = 50;
+  const first = rows.slice(0, PAGE_SIZE);
+  const rest = rows.slice(PAGE_SIZE);
+
+  const rowHtml = (r)=>`
+    <div class="pair-item" onclick="openPalDetail('${r.child.key}')" style="cursor:pointer;">
+      <span>${fixed.name_ja}</span><span class="plus">+</span><span>${r.partner.name_ja}</span>
+      <span class="plus">=</span><b>${r.child.name_ja}${r.child.is_variant?'(亜種)':''}</b>
+    </div>
+  `;
+
+  let html = `
+    <p style="font-size:13px;color:var(--ink);margin:16px 0 12px;">
+      <b>${fixed.name_ja}</b> と ${label} を組み合わせた場合の全 <b>${rows.length}</b> 通りです（もう一方の親パルも指定すると、その組み合わせだけの結果に絞り込まれます）。
+    </p>
+    <div class="pair-list" id="breed-combo-list-first">${first.map(rowHtml).join('')}</div>
+  `;
+  if(rest.length){
+    html += `
+      <div id="breed-combo-more-container">
+        <button class="btn secondary" id="breed-combo-show-more-btn" style="width:100%; margin-top:8px;">さらに表示（残り ${rest.length} 通り）</button>
+      </div>
+      <div class="pair-list" id="breed-combo-list-rest" style="display:none; margin-top:8px;">${rest.map(rowHtml).join('')}</div>
+    `;
+  }
+  html += `
+    <div style="text-align:right;margin-top:16px;">
+      <a href="javascript:void(0)" onclick="document.getElementById('view-breed').scrollIntoView({behavior:'smooth', block:'start'})" style="font-size:13px;color:var(--accent);text-decoration:none;">↑ 画面上部に戻る</a>
+    </div>
+  `;
+  resultEl.innerHTML = html;
+  document.getElementById('breed-combo-show-more-btn')?.addEventListener('click', (e)=>{
+    document.getElementById('breed-combo-list-rest').style.display = 'block';
+    e.target.parentNode.style.display = 'none';
+  });
+}
+
 function updateBreedResult(){
   const a = pickerA.getValue(), b = pickerB.getValue();
   const resultEl = document.getElementById('breed-result');
-  if(!a || !b){ resultEl.innerHTML=''; return; }
+  if(!a && !b){ resultEl.innerHTML=''; return; }
+  if(a && !b){ renderSinglePartnerCombos(a, '手持ちの全パル'); return; }
+  if(!a && b){ renderSinglePartnerCombos(b, '手持ちの全パル'); return; }
   const childKey = getChild(a,b);
   if(!childKey){ resultEl.innerHTML = '<div class="result-card">計算できませんでした。</div>'; return; }
   const child = palByKey.get(childKey);
@@ -787,14 +839,18 @@ function renderMydexGrid(){
   const q = document.getElementById('mydex-search').value;
   const grid = document.getElementById('mydex-grid');
   const filtered = palList.filter(p=>matchesQuery(p,q));
-  grid.innerHTML = filtered.map(p=>`
-    <div class="pal-card ownable" data-key="${p.key}">
-      <input type="checkbox" class="owned-check" ${ownedSet.has(p.key)?'checked':''}>
+  grid.innerHTML = filtered.map(p=>{
+    const owned = ownedSet.has(p.key);
+    const masked = !owned && mydexSecretName;
+    return `
+    <div class="pal-card ownable ${masked?'is-secret':''}" data-key="${p.key}">
+      <input type="checkbox" class="owned-check" ${owned?'checked':''}>
       <div class="num">No.${p.dex_no}${p.is_variant?' 亜種':''}</div>
-      <div class="ja">${p.name_ja}</div>
-      <div class="en">${p.name}</div>
+      <div class="ja">${masked ? '？？？？？' : p.name_ja}</div>
+      <div class="en">${masked ? '?????' : p.name}</div>
     </div>
-  `).join('');
+  `;
+  }).join('');
   grid.querySelectorAll('.pal-card').forEach(card=>{
     const key = card.dataset.key;
     const check = card.querySelector('.owned-check');
@@ -804,6 +860,7 @@ function renderMydexGrid(){
       saveOwned(ownedSet);
       updateMydexSummary();
       renderDiscover();
+      renderMydexGrid();
     });
     card.addEventListener('click', (e)=>{
       if(e.target.classList.contains('owned-check')) return;
@@ -812,6 +869,15 @@ function renderMydexGrid(){
   });
 }
 document.getElementById('mydex-search').addEventListener('input', renderMydexGrid);
+const mydexSecretNameChk = document.getElementById('mydex-secret-name');
+if(mydexSecretNameChk){
+  mydexSecretNameChk.checked = mydexSecretName;
+  mydexSecretNameChk.addEventListener('change', ()=>{
+    mydexSecretName = mydexSecretNameChk.checked;
+    saveBoolSetting(MYDEX_SECRET_NAME_KEY, mydexSecretName);
+    renderMydexGrid();
+  });
+}
 document.getElementById('mydex-clear-btn').addEventListener('click', ()=>{
   showConfirm('My図鑑の所持パルを全て解除します。よろしいですか？', ()=>{
     ownedSet = new Set();
@@ -974,7 +1040,7 @@ document.getElementById('mydex-bulk-check-btn').addEventListener('click', ()=>{
   applyOwnedChange();
 });
 
-function updateMydexSummary(){ document.getElementById('owned-count').textContent = ownedSet.size; }
+function updateMydexSummary(){ document.getElementById('owned-count').textContent = ownedSet.size + ' / ' + palList.length; }
 
 function renderDiscover(){
   const grid = document.getElementById('discover-grid');

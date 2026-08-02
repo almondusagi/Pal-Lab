@@ -123,8 +123,14 @@
     <h2 class="view-title">My図鑑</h2>
     <p class="view-desc">今持っているパルにチェックを入れてください。まだ持っていないパルの中で、今の手持ちだけで配合できるパルが自動で一覧表示されます。</p>
     <div class="mydex-summary">
-      <div class="mydex-stat"><div class="v" id="owned-count">0</div><div class="l">所有パル数</div></div>
+      <div class="mydex-stat"><div class="v" id="owned-count">0 / 0</div><div class="l">所有パル数</div></div>
       <div class="mydex-stat" style="cursor: pointer;" onclick="document.getElementById('discover-section-title').scrollIntoView({behavior:'smooth', block:'start'})" title="クリックで一覧へジャンプ"><div class="v" id="discover-count">0</div><div class="l">配合で作れる未所持パル</div></div>
+    </div>
+    <div class="filter-group">
+      <div class="filter-group-label"><span>ネタバレ防止設定</span></div>
+      <div class="chk-pills">
+        <label class="chk-pill" id="mydex-secret-name-wrap"><input type="checkbox" id="mydex-secret-name" checked> 未チェックのパル名を隠す</label>
+      </div>
     </div>
     <div class="mydex-csv-row">
       <button class="btn secondary" id="mydex-export-btn">CSVエクスポート</button>
