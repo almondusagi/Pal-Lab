@@ -28,9 +28,16 @@ const palList = PALS.slice().sort((a,b)=> a.dex_no - b.dex_no || (a.is_variant?1
 // モコロン(3050) -> target 2705, tied between ラヴィ(2700) and ツノガミ(2710) at distance 5;
 // the game produces ツノガミ, i.e. the HIGHER breeding_priority/power wins the tie.
 function childPowerFor(a, b){ return Math.floor((a.breeding_power + b.breeding_power + 1) / 2); }
+function specialComboKey(aKey, bKey){
+  return aKey < bKey ? (aKey + '|' + bKey) : (bKey + '|' + aKey);
+}
 function getChild(aKey, bKey){
   const a = palByKey.get(aKey), b = palByKey.get(bKey);
   if(!a || !b) return null;
+  // Fixed/special combinations (fusion variants, Anubis, Grizzbolt, etc.) always override
+  // the averaging formula in-game. Check that table first.
+  const special = SPECIAL_COMBOS[specialComboKey(aKey, bKey)];
+  if(special) return special;
   const target = childPowerFor(a, b);
   let best = null, bestDist = Infinity;
   for(const p of palList){
@@ -53,6 +60,20 @@ function loadOwned(){
 function saveOwned(set){ localStorage.setItem(OWNED_KEY, JSON.stringify(Array.from(set))); }
 let ownedSet = loadOwned();
 
+/* ---------- 図鑑シークレット設定（未所持パルの外見・名前を隠す） ---------- */
+const SECRET_APPEARANCE_KEY = 'palbreed_secret_appearance_v1';
+const SECRET_NAME_KEY = 'palbreed_secret_name_v1';
+function loadBoolSetting(key, defaultVal){
+  const raw = localStorage.getItem(key);
+  if(raw === null) return defaultVal;
+  return raw === '1';
+}
+function saveBoolSetting(key, val){ localStorage.setItem(key, val ? '1' : '0'); }
+// デフォルトは両方とも「隠す」＝true
+let secretAppearance = loadBoolSetting(SECRET_APPEARANCE_KEY, true);
+let secretName = loadBoolSetting(SECRET_NAME_KEY, true);
+function isPalSecret(p){ return !ownedSet.has(p.key); }
+
 /* ---------- helpers ---------- */
 function hiraToKata(s){
   return s.replace(/[\u3041-\u3096]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60));
@@ -74,6 +95,23 @@ function palImageUrl(pal){
 }
 function imgTag(pal, cls){
   return `<img src="${palImageUrl(pal)}" alt="${pal.name}" class="pal-img ${cls||''}" loading="lazy" onerror="this.style.display='none';">`;
+}
+function silhouetteTag(cls){
+  return `<div class="pal-img pal-img-secret ${cls||''}"><span class="secret-mark">？</span></div>`;
+}
+// 未所持パルは「外見を隠す」「名前を隠す」のチェック状況に応じて画像/名前を伏せて表示する。
+// My図鑑（ownedSet）に登録済みのパルは常にそのまま表示。
+function dexImgTag(pal, cls){
+  if(isPalSecret(pal) && secretAppearance) return silhouetteTag(cls);
+  return imgTag(pal, cls);
+}
+function dexDisplayName(pal){
+  if(isPalSecret(pal) && secretName) return '？？？？？';
+  return pal.name_ja;
+}
+function dexDisplayNameEn(pal){
+  if(isPalSecret(pal) && secretName) return '?????';
+  return pal.name;
 }
 function highlightNumbers(text){
   if(!text) return '';
@@ -111,6 +149,7 @@ document.querySelectorAll('nav.tabs button').forEach(btn=>{
     const view = btn.dataset.view;
     document.querySelectorAll('section.view').forEach(s=>s.classList.remove('active'));
     document.getElementById('view-'+view).classList.add('active');
+    if(view === 'dex') renderDex();
   });
 });
 
@@ -123,14 +162,18 @@ modalBackdrop.addEventListener('click', e=>{ if(e.target===modalBackdrop) closeM
 function openPalDetail(key){
   const p = palByKey.get(key);
   if(!p) return;
+  const secret = isPalSecret(p);
+  const maskImg = secret && secretAppearance;
+  const maskName = secret && secretName;
   const suit = (p.suitability||[]).slice().sort((a,b)=>b.level-a.level).map(s=>`<span class="tag">${WORK_JA[s.type]||s.type} Lv${s.level}</span>`).join('') || '<span class="tag">-</span>';
   const guaranteed = (p.guaranteed_passives||[]).map(g=>`<span class="tag" style="border-color:var(--accent-2);">${g.name_ja}</span>`).join('') || '<span class="tag">なし</span>';
   const wildLevel = (p.min_wild_level!=null && p.max_wild_level!=null) ? `Lv${p.min_wild_level}〜${p.max_wild_level}` : '野生出現なし（配合/捕獲イベント等）';
   modalContent.innerHTML = `
     <button class="close-btn" onclick="closeModal()">&times;</button>
-    ${imgTag(p, 'pal-img-modal')}
-    <h3>${p.name_ja} ${variantTag(p)}</h3>
-    <div class="en-name">${p.name} ・ No.${p.dex_no}${p.is_variant?' (亜種)':''}</div>
+    ${maskImg ? silhouetteTag('pal-img-modal') : imgTag(p, 'pal-img-modal')}
+    <h3>${dexDisplayName(p)} ${maskName ? '' : variantTag(p)}</h3>
+    <div class="en-name">${dexDisplayNameEn(p)} ・ No.${p.dex_no}${p.is_variant?' (亜種)':''}</div>
+    ${secret ? `<div class="secret-banner">🔒 未所持パルです。My図鑑にチェックを入れると外見・名前が表示されます。</div>` : ''}
     <div class="stat-row">
       <div class="stat-box"><div class="v">${p.stats?.hp ?? '-'}</div><div class="l">HP</div></div>
       <div class="stat-box"><div class="v">${p.stats?.attack ?? '-'}</div><div class="l">攻撃力</div></div>
@@ -173,18 +216,41 @@ function renderDex(){
   const grid = document.getElementById('dex-grid');
   const filtered = palList.filter(p => matchesQuery(p,q) && (!workF || (p.suitability||[]).some(s=>s.type===workF)));
   document.getElementById('dex-count').textContent = filtered.length + ' / ' + palList.length + ' 匹';
-  grid.innerHTML = filtered.map(p=>`
-    <div class="pal-card" onclick="openPalDetail('${p.key}')">
-      ${imgTag(p)}
+  grid.innerHTML = filtered.map(p=>{
+    const secret = isPalSecret(p);
+    const showPower = !(secret && secretName); // 配合力も名前と一緒に伏せる（数値から推測されるのを防ぐ）
+    return `
+    <div class="pal-card ${secret ? 'is-secret' : ''}" onclick="openPalDetail('${p.key}')">
+      ${dexImgTag(p)}
       <div class="num">No.${p.dex_no}${p.is_variant?' 亜種':''}</div>
-      <div class="ja">${p.name_ja}</div>
-      <div class="en">${p.name}</div>
-      <div class="badges"><span class="tag" style="font-size:10px;">配合力 ${p.breeding_power}</span></div>
+      <div class="ja">${dexDisplayName(p)}</div>
+      <div class="en">${dexDisplayNameEn(p)}</div>
+      <div class="badges"><span class="tag" style="font-size:10px;">配合力 ${showPower ? p.breeding_power : '???'}</span></div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 document.getElementById('dex-search').addEventListener('input', renderDex);
 dexWorkFilter.addEventListener('change', renderDex);
+
+const dexSecretAppearanceChk = document.getElementById('dex-secret-appearance');
+const dexSecretNameChk = document.getElementById('dex-secret-name');
+if(dexSecretAppearanceChk){
+  dexSecretAppearanceChk.checked = secretAppearance;
+  dexSecretAppearanceChk.addEventListener('change', ()=>{
+    secretAppearance = dexSecretAppearanceChk.checked;
+    saveBoolSetting(SECRET_APPEARANCE_KEY, secretAppearance);
+    renderDex();
+  });
+}
+if(dexSecretNameChk){
+  dexSecretNameChk.checked = secretName;
+  dexSecretNameChk.addEventListener('change', ()=>{
+    secretName = dexSecretNameChk.checked;
+    saveBoolSetting(SECRET_NAME_KEY, secretName);
+    renderDex();
+  });
+}
 
 /* ==================== 汎用パルピッカー ==================== */
 function createPalPicker(container, {placeholder='パル名で検索', onChange=null} = {}){
@@ -389,9 +455,12 @@ function findMultiInheritanceRoutes(startKeys, targetKeys) {
   const fullTMask = T>0 ? ((1<<T)-1) : 0;
 
   function initialMasks(key){
-    let sMask=0, tMask=0;
+    let sMask=0;
     if(startIndex.has(key)) sMask |= (1 << startIndex.get(key));
-    if(targetIndex.has(key)) tMask |= (1 << targetIndex.get(key));
+    // 目標パルとしてカウントされるのは「起点パル全員が合流し終えたあと」のみ。
+    // (単一起点でその起点自体が目標でもある、というごく特殊なケースのみここで即座に成立しうる)
+    let tMask=0;
+    if(sMask === fullSMask && targetIndex.has(key)) tMask |= (1 << targetIndex.get(key));
     return [sMask, tMask];
   }
 
@@ -413,10 +482,10 @@ function findMultiInheritanceRoutes(startKeys, targetKeys) {
   }
   if(results.length>0) return { routes: results, timedOut:false };
 
-  const MAX_DEPTH = 14;
+  const MAX_DEPTH = 16;
   const MAX_RESULTS = 300;
-  const MAX_QUEUE = 20000;
-  const TIME_LIMIT_MS = 4000;
+  const MAX_QUEUE = 40000;
+  const TIME_LIMIT_MS = 8000;
   const startTime = Date.now();
   let depth = 0;
   let timedOut = false;
@@ -448,9 +517,15 @@ function findMultiInheritanceRoutes(startKeys, targetKeys) {
 
         for (const opt of options) {
           const newSMask = opt ? (state.sMask | (1 << startIndex.get(opt))) : state.sMask;
-          const newTMask = targetIndex.has(childKey) ? (state.tMask | (1 << targetIndex.get(childKey))) : state.tMask;
+          // 起点パル全員が合流し終えている（newSMask === fullSMask）場合のみ、
+          // このステップで生まれた子パルを目標パルとしてカウントする。
+          // まだ合流していない起点が残っている段階でたまたま目標パルと同じ個体が
+          // 生まれても、その時点ではスキルを全て継承できていないためカウントしない。
+          const newTMask = (newSMask === fullSMask && targetIndex.has(childKey))
+            ? (state.tMask | (1 << targetIndex.get(childKey)))
+            : state.tMask;
           const stateKey = `${childKey}#${newSMask}#${newTMask}`;
-          if (visited.has(stateKey) && visited.get(stateKey) < depth) continue;
+          if (visited.has(stateKey)) continue;
           visited.set(stateKey, depth);
 
           const newPath = [...state.path, { pal: childKey, viaPartner: opt }];

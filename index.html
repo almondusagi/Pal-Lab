@@ -32,7 +32,14 @@
   <!-- ================= 図鑑 ================= -->
   <section class="view active" id="view-dex">
     <h2 class="view-title">モンスター図鑑</h2>
-    <p class="view-desc">パル一覧です。カードをタップすると詳細（種族値・作業適性・ドロップ・スキル・配合ランク）を確認できます。</p>
+    <p class="view-desc">パル一覧です。カードをタップすると詳細（種族値・作業適性・ドロップ・スキル・配合ランク）を確認できます。未所持のパルは下のチェックで外見・名前を隠せます（My図鑑に登録すると自動で表示されます）。</p>
+    <div class="filter-group">
+      <div class="filter-group-label"><span>未所持パルのシークレット設定</span></div>
+      <div class="chk-pills">
+        <label class="chk-pill" id="dex-secret-appearance-wrap"><input type="checkbox" id="dex-secret-appearance" checked> 外見を隠す</label>
+        <label class="chk-pill" id="dex-secret-name-wrap"><input type="checkbox" id="dex-secret-name" checked> 名前を隠す</label>
+      </div>
+    </div>
     <div class="toolbar">
       <input type="text" id="dex-search" placeholder="パル名で検索（日本語 / English）">
       <select id="dex-type-filter">
