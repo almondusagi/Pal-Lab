@@ -15,8 +15,18 @@ const palList = PALS.slice().sort((a,b)=> a.dex_no - b.dex_no || (a.is_variant?1
 
 /* ---------- breeding formula (Palworld 1.0 CombiRank) ---------- */
 // child breeding power = floor((A+B+1)/2); result = pal whose own breeding power is closest
-// (ties broken by lowest breeding_priority). This mirrors the in-game formula, so it
+// (ties broken by HIGHEST breeding_priority). This mirrors the in-game formula, so it
 // automatically reflects 1.0's revised breeding order (no hardcoded pair table needed).
+//
+// NOTE on tie-break direction (fixed 2026-08): breeding_priority is normally just
+// breeding_power * 100 for ordinary pals, but locked/special variants (Noct/Cryst/Ignis/
+// Terra/Lux/Botan forms obtained via fixed pairs) have deliberately tiny override values
+// (e.g. 572-577) so they lose ties against ordinary pals and aren't produced by the plain
+// averaging formula. Picking the LOWER priority on a tie (the old behavior) had it backwards:
+// it let those locked variants win ties they shouldn't, and on ordinary-vs-ordinary ties it
+// rounded the wrong direction. Confirmed against a real in-game result: パチマル(2360) x
+// モコロン(3050) -> target 2705, tied between ラヴィ(2700) and ツノガミ(2710) at distance 5;
+// the game produces ツノガミ, i.e. the HIGHER breeding_priority/power wins the tie.
 function childPowerFor(a, b){ return Math.floor((a.breeding_power + b.breeding_power + 1) / 2); }
 function getChild(aKey, bKey){
   const a = palByKey.get(aKey), b = palByKey.get(bKey);
@@ -25,7 +35,7 @@ function getChild(aKey, bKey){
   let best = null, bestDist = Infinity;
   for(const p of palList){
     const dist = Math.abs(p.breeding_power - target);
-    if(dist < bestDist || (dist === bestDist && best && p.breeding_priority < best.breeding_priority)){
+    if(dist < bestDist || (dist === bestDist && best && p.breeding_priority > best.breeding_priority)){
       bestDist = dist; best = p;
     }
   }
@@ -224,6 +234,79 @@ function createPalPicker(container, {placeholder='パル名で検索', onChange=
   return { getValue: ()=>value, setValue };
 }
 
+/* ==================== 汎用パル複数選択ピッカー（リスト追加式） ==================== */
+function createPalMultiPicker(container, {placeholder='パル名で検索', maxItems=6, onChange=null} = {}){
+  container.innerHTML = `
+    <input type="text" placeholder="${placeholder}">
+    <div class="pal-dropdown" style="display:none;"></div>
+    <div class="multi-chip-list"><span class="placeholder">未選択</span></div>
+  `;
+  const input = container.querySelector('input');
+  const dropdown = container.querySelector('.pal-dropdown');
+  const chipList = container.querySelector('.multi-chip-list');
+  let values = [];
+
+  function renderOptions(q){
+    const matches = palList.filter(p=>matchesQuery(p,q) && !values.includes(p.key)).slice(0,40);
+    if(matches.length===0){ dropdown.innerHTML = '<div class="opt" style="color:var(--ink-dim)">該当なし</div>'; }
+    else {
+      dropdown.innerHTML = matches.map(p=>`<div class="opt" data-key="${p.key}"><span>${p.name_ja}${p.is_variant?' (亜種)':''}</span><span class="en">${p.name}</span></div>`).join('');
+    }
+    dropdown.style.display = 'block';
+  }
+
+  function renderChips(){
+    if(values.length===0){
+      chipList.innerHTML = '<span class="placeholder">未選択</span>';
+      return;
+    }
+    chipList.innerHTML = values.map(key=>{
+      const p = palByKey.get(key);
+      if(!p) return '';
+      return `
+        <div class="multi-chip" data-key="${key}">
+          <span class="ja">${p.name_ja}${p.is_variant?' (亜種)':''}</span>
+          <button type="button" class="chip-remove" data-key="${key}" title="削除">&times;</button>
+        </div>
+      `;
+    }).join('');
+    chipList.querySelectorAll('.chip-remove').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        values = values.filter(k=>k!==btn.dataset.key);
+        renderChips();
+        if(onChange) onChange(values.slice());
+      });
+    });
+  }
+
+  input.addEventListener('focus', ()=> renderOptions(input.value));
+  input.addEventListener('input', ()=> renderOptions(input.value));
+  document.addEventListener('click', (e)=>{
+    if(!container.contains(e.target)) dropdown.style.display='none';
+  });
+  dropdown.addEventListener('click', (e)=>{
+    const opt = e.target.closest('.opt');
+    if(!opt || !opt.dataset.key) return;
+    if(values.length >= maxItems){
+      dropdown.style.display='none';
+      input.value='';
+      showConfirm(`一度に指定できるのは最大${maxItems}匹までです。`, ()=>{});
+      return;
+    }
+    if(!values.includes(opt.dataset.key)){
+      values.push(opt.dataset.key);
+      renderChips();
+      if(onChange) onChange(values.slice());
+    }
+    dropdown.style.display='none';
+    input.value='';
+  });
+
+  renderChips();
+  return { getValues: ()=>values.slice(), clear: ()=>{ values=[]; renderChips(); } };
+}
+
 /* ==================== 配合検索 ==================== */
 const pickerA = createPalPicker(document.getElementById('picker-a'), {onChange: updateBreedResult});
 const pickerB = createPalPicker(document.getElementById('picker-b'), {onChange: updateBreedResult});
@@ -267,10 +350,9 @@ function updateReverseResult(){
   }).join('')}</div>`;
 }
 
-/* ==================== 継承ルート（スキル継承探索） ==================== */
-const pickerRouteStart = createPalPicker(document.getElementById('picker-route-start'), {placeholder: '例: レイバーン'});
-const pickerRouteIntermediate = createPalPicker(document.getElementById('picker-route-intermediate'), {placeholder: '例: アヌビス (任意)'});
-const pickerRouteTarget = createPalPicker(document.getElementById('picker-route-target'), {placeholder: '例: モコロン'});
+/* ==================== 継承ルート（複数起点・複数目標 スキル継承探索） ==================== */
+const multiPickerRouteStart = createPalMultiPicker(document.getElementById('picker-route-start'), {placeholder: '例: レイバーン（追加でリストに入ります）', maxItems: 5});
+const multiPickerRouteTarget = createPalMultiPicker(document.getElementById('picker-route-target'), {placeholder: '例: モコロン（追加でリストに入ります）', maxItems: 5});
 
 let breedGraph = null;
 function getBreedGraph() {
@@ -291,63 +373,102 @@ function getBreedGraph() {
   return breedGraph;
 }
 
-function findShortestPaths(start, target) {
-  if (start === target) return [[start]];
+/**
+ * 複数の起点パル（すべてメインの血統に直接パートナーとして合流させる）から出発し、
+ * 複数の目標パル（すべて経由して生み出す）を満たす最短の「一本道」配合ルートを探索する。
+ * 状態 = (現在のパル, 合流済み起点ビットマスク, 到達済み目標ビットマスク)
+ * 起点・目標ともに順不同で構わないが、単一のメイン血統のみを辿る前提（ツリー分岐なし）。
+ */
+function findMultiInheritanceRoutes(startKeys, targetKeys) {
   const graph = getBreedGraph();
-  let queue = [[start]];
-  let visited = new Map();
-  visited.set(start, 0);
-  
-  let foundPaths = [];
-  let currentDepth = 0;
-  
-  while (queue.length > 0 && currentDepth < 6) {
-    let nextQueue = [];
-    currentDepth++;
-    
-    for (const path of queue) {
-      const current = path[path.length - 1];
-      const edges = graph.get(current);
-      if (!edges) continue;
-      
-      for (const next of edges.keys()) {
-        if (visited.has(next) && visited.get(next) < currentDepth) continue;
-        visited.set(next, currentDepth);
-        
-        const newPath = [...path, next];
-        if (next === target) {
-          foundPaths.push(newPath);
-        } else {
-          nextQueue.push(newPath);
-        }
-      }
-    }
-    if (foundPaths.length > 0) break;
-    if (nextQueue.length > 10000) nextQueue = nextQueue.slice(0, 10000);
-    queue = nextQueue;
-  }
-  return foundPaths;
-}
+  const S = startKeys.length;
+  const T = targetKeys.length;
+  const startIndex = new Map(startKeys.map((k,i)=>[k,i]));
+  const targetIndex = new Map(targetKeys.map((k,i)=>[k,i]));
+  const fullSMask = S>0 ? ((1<<S)-1) : 0;
+  const fullTMask = T>0 ? ((1<<T)-1) : 0;
 
-function findInheritanceRoutes(start, target, intermediate) {
-  if (!intermediate) {
-    return findShortestPaths(start, target);
-  } else {
-    const p1 = findShortestPaths(start, intermediate);
-    if (p1.length === 0) return [];
-    const p2 = findShortestPaths(intermediate, target);
-    if (p2.length === 0) return [];
-    
-    const combined = [];
-    for (const a of p1) {
-      for (const b of p2) {
-        combined.push([...a, ...b.slice(1)]);
-        if (combined.length > 1000) break;
-      }
-      if (combined.length > 1000) break;
-    }
-    return combined;
+  function initialMasks(key){
+    let sMask=0, tMask=0;
+    if(startIndex.has(key)) sMask |= (1 << startIndex.get(key));
+    if(targetIndex.has(key)) tMask |= (1 << targetIndex.get(key));
+    return [sMask, tMask];
   }
+
+  const visited = new Map(); // `${cur}#${sMask}#${tMask}` -> depth found
+  let queue = [];
+  let results = [];
+
+  for(const s of startKeys){
+    const [sMask, tMask] = initialMasks(s);
+    const stateKey = `${s}#${sMask}#${tMask}`;
+    if(visited.has(stateKey)) continue;
+    visited.set(stateKey, 0);
+    const path = [{ pal:s, viaPartner:null }];
+    if(sMask===fullSMask && tMask===fullTMask){
+      results.push(path);
+    } else {
+      queue.push({ cur:s, sMask, tMask, path });
+    }
+  }
+  if(results.length>0) return { routes: results, timedOut:false };
+
+  const MAX_DEPTH = 14;
+  const MAX_RESULTS = 300;
+  const MAX_QUEUE = 20000;
+  const TIME_LIMIT_MS = 4000;
+  const startTime = Date.now();
+  let depth = 0;
+  let timedOut = false;
+
+  while (queue.length > 0 && depth < MAX_DEPTH && results.length === 0) {
+    depth++;
+    const nextQueue = [];
+    for (const state of queue) {
+      if (Date.now() - startTime > TIME_LIMIT_MS) { timedOut = true; break; }
+      const edges = graph.get(state.cur);
+      if (!edges) continue;
+
+      for (const [childKey, partners] of edges.entries()) {
+        // このエッジ（state.cur → childKey）を成立させるパートナー候補の中に、
+        // 「未合流の起点パル」が含まれていれば、それを使う分岐を追加する。
+        const unclaimedStarts = [];
+        let hasNonClaimingPartner = false;
+        for (const pk of partners) {
+          if (startIndex.has(pk) && !(state.sMask & (1 << startIndex.get(pk)))) {
+            unclaimedStarts.push(pk);
+          } else {
+            hasNonClaimingPartner = true;
+          }
+        }
+        const options = [];
+        if (hasNonClaimingPartner) options.push(null);
+        for (const u of unclaimedStarts) options.push(u);
+        if (options.length === 0) continue;
+
+        for (const opt of options) {
+          const newSMask = opt ? (state.sMask | (1 << startIndex.get(opt))) : state.sMask;
+          const newTMask = targetIndex.has(childKey) ? (state.tMask | (1 << targetIndex.get(childKey))) : state.tMask;
+          const stateKey = `${childKey}#${newSMask}#${newTMask}`;
+          if (visited.has(stateKey) && visited.get(stateKey) < depth) continue;
+          visited.set(stateKey, depth);
+
+          const newPath = [...state.path, { pal: childKey, viaPartner: opt }];
+          if (newSMask === fullSMask && newTMask === fullTMask) {
+            results.push(newPath);
+            if (results.length >= MAX_RESULTS) break;
+          } else {
+            nextQueue.push({ cur: childKey, sMask: newSMask, tMask: newTMask, path: newPath });
+          }
+        }
+        if (results.length >= MAX_RESULTS) break;
+      }
+      if (results.length >= MAX_RESULTS) break;
+    }
+    if (results.length > 0 || timedOut) break;
+    queue = nextQueue.length > MAX_QUEUE ? nextQueue.slice(0, MAX_QUEUE) : nextQueue;
+  }
+  return { routes: results, timedOut };
 }
 
 window.openRouteStepDetail = function(aKey, cKey) {
@@ -385,36 +506,43 @@ window.openRouteStepDetail = function(aKey, cKey) {
   modalBackdrop.classList.add('open');
 };
 
-function renderRouteList(routeArrays, graph, startIndex = 0) {
+function renderMultiRouteList(routeArrays, graph, targetSet, startIndexList = 0) {
   return routeArrays.map((route, idx) => {
     let routeHtml = `<div class="route-step" style="flex-direction:column; align-items:stretch; gap:6px;">`;
-    routeHtml += `<div style="font-size:11px; color:var(--accent); font-weight:bold;">ルート ${startIndex + idx + 1}</div>`;
-    
+    routeHtml += `<div style="font-size:11px; color:var(--accent); font-weight:bold;">ルート ${startIndexList + idx + 1}</div>`;
+
+    const firstKey = route[0].pal;
+    const firstPal = palByKey.get(firstKey);
+    const firstIsTarget = targetSet.has(firstKey);
+    routeHtml += `<div style="font-size:12px; color:var(--ink-dim);">起点: <b style="color:var(--accent-2);">${firstPal.name_ja}</b>${firstIsTarget ? ' <span style="color:#ffd54f;font-weight:bold;">（目標兼用）</span>' : ''}</div>`;
+
     for (let j = 0; j < route.length - 1; j++) {
-      const a = route[j];
-      const c = route[j+1];
-      const partners = graph.get(a).get(c);
-      
+      const a = route[j].pal;
+      const c = route[j+1].pal;
+      const viaPartner = route[j+1].viaPartner;
       const pa = palByKey.get(a);
       const pc = palByKey.get(c);
-      
-      const partnerNames = partners.map(pk => palByKey.get(pk).name_ja);
-      const uniquePartners = [...new Set(partnerNames)];
-      let partnerStr = '';
-      if (uniquePartners.length <= 4) {
-         partnerStr = uniquePartners.join('、');
+      const isTargetHit = targetSet.has(c);
+
+      let partnerHtml;
+      if (viaPartner) {
+        const partnerPal = palByKey.get(viaPartner);
+        partnerHtml = `<span style="color:#ffd54f; font-weight:bold;">${partnerPal.name_ja}</span><span style="font-size:10px; color:#ffd54f; margin-left:4px;">（起点合流）</span>`;
       } else {
-         partnerStr = uniquePartners.slice(0, 3).join('、') + ` など他${uniquePartners.length - 3}種`;
+        const partners = graph.get(a).get(c) || [];
+        const partnerNames = [...new Set(partners.map(pk => palByKey.get(pk).name_ja))];
+        let partnerStr = partnerNames.length <= 4 ? partnerNames.join('、') : partnerNames.slice(0, 3).join('、') + ` など他${partnerNames.length - 3}種`;
+        partnerHtml = `<span style="color:var(--ink-dim);">(${partnerStr})</span>`;
       }
-      
+
       routeHtml += `
         <div style="display:flex; align-items:center; gap:8px; font-size:13px; flex-wrap:wrap; background:rgba(0,0,0,0.15); padding:8px 12px; border-radius:6px; line-height:1.4; cursor:pointer;" onclick="openRouteStepDetail('${a}', '${c}')" title="クリックでパートナー詳細を確認">
           <span class="gen-badge">Step ${j+1}</span>
           <span style="font-weight:bold;">${pa.name_ja}</span>
           <span class="plus">＋</span>
-          <span style="color:var(--ink-dim);">(${partnerStr})</span>
+          ${partnerHtml}
           <span style="margin:0 4px;">＝</span>
-          <span style="color:var(--accent-2); font-weight:bold;">${pc.name_ja}</span>
+          <span style="font-weight:bold; ${isTargetHit ? 'color:#ffd54f; text-shadow:0 0 6px rgba(255,213,79,.55);' : 'color:var(--accent-2);'}">${pc.name_ja}${isTargetHit ? ' 🎯' : ''}</span>
         </div>
       `;
     }
@@ -424,36 +552,34 @@ function renderRouteList(routeArrays, graph, startIndex = 0) {
 }
 
 document.getElementById('route-run-btn')?.addEventListener('click', ()=>{
-  const startKey = pickerRouteStart.getValue();
-  const intKey = pickerRouteIntermediate.getValue();
-  const targetKey = pickerRouteTarget.getValue();
+  const startKeys = multiPickerRouteStart.getValues();
+  const targetKeys = multiPickerRouteTarget.getValues();
   const resultEl = document.getElementById('route-result');
-  
-  if(!startKey || !targetKey){
-    resultEl.innerHTML = '<p style="color:var(--danger);font-size:13px;margin-top:14px;">起点パルと目標パルは両方指定してください。</p>';
+
+  if(startKeys.length===0 || targetKeys.length===0){
+    resultEl.innerHTML = '<p style="color:var(--danger);font-size:13px;margin-top:14px;">起点パルと目標パルをそれぞれ1匹以上指定してください。</p>';
     return;
   }
-  if(startKey === targetKey){
-    resultEl.innerHTML = '<p style="color:var(--danger);font-size:13px;margin-top:14px;">起点と目標が同じパルです。</p>';
-    return;
-  }
-  
+
   resultEl.innerHTML = '<p style="color:var(--ink-dim);font-size:13px;margin-top:14px;">経路を探索中...</p>';
-  
+
   setTimeout(() => {
-    const routes = findInheritanceRoutes(startKey, targetKey, intKey);
+    const { routes, timedOut } = findMultiInheritanceRoutes(startKeys, targetKeys);
     if(routes.length === 0){
-       resultEl.innerHTML = `<p style="color:var(--danger);font-size:13px;margin-top:14px;">指定された条件での配合ルートが見つかりませんでした。</p>`;
-       return;
+      resultEl.innerHTML = timedOut
+        ? `<p style="color:var(--danger);font-size:13px;margin-top:14px;">探索に時間がかかりすぎたため打ち切りました。起点・目標の数を減らして再度お試しください。</p>`
+        : `<p style="color:var(--danger);font-size:13px;margin-top:14px;">指定された条件を満たす配合ルートが見つかりませんでした（起点パルを直接パートナーとして使う一本道のルートが存在しない可能性があります）。</p>`;
+      return;
     }
     
     const graph = getBreedGraph();
+    const targetSet = new Set(targetKeys);
     let html = `<div style="margin-top:16px;">`;
-    html += `<p style="font-size:13px;color:var(--ink);margin-bottom:12px;"><b>${routes.length}</b> 通りの最短ルートが見つかりました。</p>`;
+    html += `<p style="font-size:13px;color:var(--ink);margin-bottom:12px;"><b>${routes.length}</b> 通りの最短ルートが見つかりました（起点 ${startKeys.length} 匹 / 目標 ${targetKeys.length} 匹をすべて満たすルート）。</p>`;
     
     const displayLimit = 5;
     const toDisplay = routes.slice(0, displayLimit);
-    html += renderRouteList(toDisplay, graph, 0);
+    html += renderMultiRouteList(toDisplay, graph, targetSet, 0);
     
     if (routes.length > displayLimit) {
       const remaining = routes.length - displayLimit;
@@ -462,7 +588,7 @@ document.getElementById('route-run-btn')?.addEventListener('click', ()=>{
           <button class="btn secondary" id="route-show-more-btn" style="width:100%; margin-top:8px;">その他 ${remaining} 通りのルートを見る</button>
         </div>
         <div id="route-more-list" style="display:none; margin-top:8px;">
-          ${renderRouteList(routes.slice(displayLimit), graph, displayLimit)}
+          ${renderMultiRouteList(routes.slice(displayLimit), graph, targetSet, displayLimit)}
         </div>
       `;
     }

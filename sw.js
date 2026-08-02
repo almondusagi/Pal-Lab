@@ -1,4 +1,4 @@
-const CACHE_NAME = 'palbreed-lab-v1';
+const CACHE_NAME = 'palbreed-lab-v2';
 const FILES = [
   './',
   './index.html',

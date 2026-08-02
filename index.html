@@ -77,21 +77,17 @@
   <section class="view" id="view-route">
     <h2 class="view-title">継承ルート（スキル継承探索）</h2>
     <p class="view-desc">
-      スキルを持っている起点パルから、スキルを継承させたい目標パルへの最短配合ルートを探索します。<br>
-      途中で特定のパルを経由したい場合は「経由パル」を指定できます。
+      スキルを持っている起点パル（複数指定可）を、すべて一本のメイン血統に直接パートナーとして合流させながら、目標パル（複数指定可）をすべて経由して作り出す最短の配合ルートを探索します。<br>
+      結果の中で <span style="color:#ffd54f;font-weight:bold;">🎯 目標パル</span> が生まれたStepと、<span style="color:#ffd54f;font-weight:bold;">起点パルが合流</span>したStepはゴールド色でハイライトされます。
     </p>
     <div class="panel">
-      <div style="display:flex; flex-direction:column; gap:12px;">
+      <div style="display:flex; flex-direction:column; gap:16px;">
         <div>
-          <label style="font-size:12px;color:var(--ink-dim); font-weight:bold;">起点パル（必須）</label>
+          <label style="font-size:12px;color:var(--ink-dim); font-weight:bold;">起点パルリスト（必須・最大5匹）</label>
           <div class="pal-picker" id="picker-route-start"></div>
         </div>
         <div>
-          <label style="font-size:12px;color:var(--ink-dim)">経由パル（任意）</label>
-          <div class="pal-picker" id="picker-route-intermediate"></div>
-        </div>
-        <div>
-          <label style="font-size:12px;color:var(--ink-dim); font-weight:bold;">目標パル（必須）</label>
+          <label style="font-size:12px;color:var(--ink-dim); font-weight:bold;">目標パルリスト（必須・最大5匹）</label>
           <div class="pal-picker" id="picker-route-target"></div>
         </div>
       </div>
