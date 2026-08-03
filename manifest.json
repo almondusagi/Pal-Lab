@@ -3,7 +3,7 @@
   "short_name": "パル配合ラボ",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#1b2318",
-  "theme_color": "#1b2318",
+  "background_color": "#060a14",
+  "theme_color": "#060a14",
   "lang": "ja"
 }

@@ -145,6 +145,32 @@ function showConfirm(message, onYes){
 }
 confirmBackdrop.addEventListener('click', e=>{ if(e.target===confirmBackdrop) confirmBackdrop.classList.remove('open'); });
 
+/* ---------- custom prompt modal（テキスト入力付き） ---------- */
+const promptBackdrop = document.getElementById('prompt-backdrop');
+const promptMessage = document.getElementById('prompt-message');
+const promptInput = document.getElementById('prompt-input');
+const promptOkBtn = document.getElementById('prompt-ok-btn');
+const promptCancelBtn = document.getElementById('prompt-cancel-btn');
+function showPrompt(message, defaultValue, onOk){
+  promptMessage.textContent = message;
+  promptInput.value = defaultValue || '';
+  promptBackdrop.classList.add('open');
+  setTimeout(()=>{ promptInput.focus(); promptInput.select(); }, 0);
+  const cleanup = () => {
+    promptBackdrop.classList.remove('open');
+    promptOkBtn.removeEventListener('click', okHandler);
+    promptCancelBtn.removeEventListener('click', cancelHandler);
+    promptInput.removeEventListener('keydown', keyHandler);
+  };
+  const okHandler = () => { const v = promptInput.value.trim(); cleanup(); if(v) onOk(v); };
+  const cancelHandler = () => { cleanup(); };
+  const keyHandler = (e) => { if(e.key==='Enter'){ okHandler(); } else if(e.key==='Escape'){ cancelHandler(); } };
+  promptOkBtn.addEventListener('click', okHandler);
+  promptCancelBtn.addEventListener('click', cancelHandler);
+  promptInput.addEventListener('keydown', keyHandler);
+}
+promptBackdrop.addEventListener('click', e=>{ if(e.target===promptBackdrop) promptBackdrop.classList.remove('open'); });
+
 /* ==================== Tabs ==================== */
 document.querySelectorAll('nav.tabs button').forEach(btn=>{
   btn.addEventListener('click', ()=>{
@@ -154,6 +180,7 @@ document.querySelectorAll('nav.tabs button').forEach(btn=>{
     document.querySelectorAll('section.view').forEach(s=>s.classList.remove('active'));
     document.getElementById('view-'+view).classList.add('active');
     if(view === 'dex') renderDex();
+    if(view === 'route') renderRouteFavorites();
   });
 });
 
@@ -472,6 +499,89 @@ function updateReverseResult(){
 const multiPickerRouteStart = createPalMultiPicker(document.getElementById('picker-route-start'), {placeholder: '例: レイバーン（追加でリストに入ります）', maxItems: 5});
 const multiPickerRouteTarget = createPalMultiPicker(document.getElementById('picker-route-target'), {placeholder: '例: モコロン（追加でリストに入ります）', maxItems: 5});
 
+/* ---------- 継承ルートのお気に入り登録 ---------- */
+const ROUTE_FAV_KEY = 'palbreed_route_favorites_v1';
+function loadRouteFavorites(){
+  try{
+    const raw = localStorage.getItem(ROUTE_FAV_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }catch(e){ return []; }
+}
+function saveRouteFavorites(list){ localStorage.setItem(ROUTE_FAV_KEY, JSON.stringify(list)); }
+let routeFavorites = loadRouteFavorites();
+
+function addRouteFavorite(name, startKeys, targetKeys, path){
+  routeFavorites.push({
+    id: 'rf_' + Date.now() + '_' + Math.random().toString(36).slice(2,8),
+    name,
+    startKeys: startKeys.slice(),
+    targetKeys: targetKeys.slice(),
+    path: path.map(step => ({ pal: step.pal, viaPartner: step.viaPartner || null })),
+    createdAt: Date.now(),
+  });
+  saveRouteFavorites(routeFavorites);
+  renderRouteFavorites();
+}
+function deleteRouteFavorite(id){
+  routeFavorites = routeFavorites.filter(f => f.id !== id);
+  saveRouteFavorites(routeFavorites);
+  renderRouteFavorites();
+}
+
+function renderRouteFavorites(){
+  const listEl = document.getElementById('route-favorites-list');
+  if(!listEl) return;
+  if(routeFavorites.length === 0){
+    listEl.innerHTML = '<p style="font-size:12px;color:var(--ink-dim);">まだお気に入りルートはありません。ルート探索結果の「☆ 保存」ボタンから登録できます。</p>';
+    return;
+  }
+  listEl.innerHTML = routeFavorites.map(f=>{
+    const startNames = f.startKeys.map(k=>palByKey.get(k)?.name_ja || '?').join('、');
+    const targetNames = f.targetKeys.map(k=>palByKey.get(k)?.name_ja || '?').join('、');
+    return `
+      <div class="pair-item" style="justify-content:space-between; align-items:center;">
+        <div style="min-width:0;">
+          <div style="font-weight:bold; color:var(--accent);">${f.name}</div>
+          <div style="font-size:11px; color:var(--ink-dim); margin-top:2px;">起点: ${startNames} → 目標: ${targetNames}（${f.path.length - 1}ステップ）</div>
+        </div>
+        <div style="display:flex; gap:6px; flex-shrink:0;">
+          <button class="btn secondary" style="padding:6px 12px; font-size:12px;" onclick="openRouteFavorite('${f.id}')">開く</button>
+          <button class="btn danger" style="padding:6px 12px; font-size:12px;" onclick="confirmDeleteRouteFavorite('${f.id}')">削除</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+window.confirmDeleteRouteFavorite = function(id){
+  const f = routeFavorites.find(x=>x.id===id);
+  if(!f) return;
+  showConfirm(`お気に入りルート「${f.name}」を削除します。よろしいですか？`, ()=>{
+    deleteRouteFavorite(id);
+  });
+};
+window.promptSaveRouteFavorite = function(regId){
+  const entry = routeSaveRegistry.get(regId);
+  if(!entry) return;
+  const startNames = entry.startKeys.map(k=>palByKey.get(k)?.name_ja || '?').join('+');
+  const targetNames = entry.targetKeys.map(k=>palByKey.get(k)?.name_ja || '?').join('+');
+  showPrompt('このルートの名前を入力してください', `${startNames} → ${targetNames}`, (name)=>{
+    addRouteFavorite(name, entry.startKeys, entry.targetKeys, entry.route);
+  });
+};
+window.openRouteFavorite = function(id){
+  const f = routeFavorites.find(x=>x.id===id);
+  if(!f) return;
+  const graph = getBreedGraph();
+  const targetSet = new Set(f.targetKeys);
+  const resultEl = document.getElementById('route-result');
+  let html = `<div style="margin-top:16px;">`;
+  html += `<p style="font-size:13px;color:var(--ink);margin-bottom:12px;">⭐ お気に入り「<b>${f.name}</b>」を表示しています。</p>`;
+  html += renderMultiRouteList([f.path], graph, targetSet, 0, {startKeys: f.startKeys, targetKeys: f.targetKeys, favoriteName: f.name});
+  html += `</div>`;
+  resultEl.innerHTML = html;
+  document.getElementById('view-route').scrollIntoView({behavior:'smooth', block:'start'});
+};
+
 let breedGraph = null;
 function getBreedGraph() {
   if (breedGraph) return breedGraph;
@@ -633,10 +743,18 @@ window.openRouteStepDetail = function(aKey, cKey) {
   modalBackdrop.classList.add('open');
 };
 
-function renderMultiRouteList(routeArrays, graph, targetSet, startIndexList = 0) {
+let routeSaveRegistry = new Map();
+function renderMultiRouteList(routeArrays, graph, targetSet, startIndexList = 0, ctx = null) {
   return routeArrays.map((route, idx) => {
     let routeHtml = `<div class="route-step" style="flex-direction:column; align-items:stretch; gap:6px;">`;
+    routeHtml += `<div style="display:flex; justify-content:space-between; align-items:center;">`;
     routeHtml += `<div style="font-size:11px; color:var(--accent); font-weight:bold;">ルート ${startIndexList + idx + 1}</div>`;
+    if(ctx){
+      const regId = 'reg_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
+      routeSaveRegistry.set(regId, { route, startKeys: ctx.startKeys, targetKeys: ctx.targetKeys });
+      routeHtml += `<button class="btn secondary" style="padding:4px 10px; font-size:11px;" onclick="promptSaveRouteFavorite('${regId}')">☆ 保存</button>`;
+    }
+    routeHtml += `</div>`;
 
     const firstKey = route[0].pal;
     const firstPal = palByKey.get(firstKey);
@@ -706,7 +824,8 @@ document.getElementById('route-run-btn')?.addEventListener('click', ()=>{
     
     const displayLimit = 5;
     const toDisplay = routes.slice(0, displayLimit);
-    html += renderMultiRouteList(toDisplay, graph, targetSet, 0);
+    const listCtx = { startKeys, targetKeys };
+    html += renderMultiRouteList(toDisplay, graph, targetSet, 0, listCtx);
     
     if (routes.length > displayLimit) {
       const remaining = routes.length - displayLimit;
@@ -715,7 +834,7 @@ document.getElementById('route-run-btn')?.addEventListener('click', ()=>{
           <button class="btn secondary" id="route-show-more-btn" style="width:100%; margin-top:8px;">その他 ${remaining} 通りのルートを見る</button>
         </div>
         <div id="route-more-list" style="display:none; margin-top:8px;">
-          ${renderMultiRouteList(routes.slice(displayLimit), graph, targetSet, displayLimit)}
+          ${renderMultiRouteList(routes.slice(displayLimit), graph, targetSet, displayLimit, listCtx)}
         </div>
       `;
     }
@@ -1091,6 +1210,7 @@ renderSkillTable();
 renderMydexGrid();
 updateMydexSummary();
 renderDiscover();
+renderRouteFavorites();
 
 const versionTag = document.getElementById('data-version-tag');
 if(versionTag) versionTag.textContent = DATA_VERSION;

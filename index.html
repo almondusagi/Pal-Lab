@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>パル配合ラボ - Palworld 配合・図鑑ツール</title>
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#1b2318">
+<meta name="theme-color" content="#060a14">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=Orbitron:wght@600;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -87,6 +87,14 @@
       スキルを持っている起点パル（複数指定可）を、すべて一本のメイン血統に直接パートナーとして合流させながら、目標パル（複数指定可）をすべて経由して作り出す最短の配合ルートを探索します。<br>
       結果の中で <span style="color:#ffd54f;font-weight:bold;">🎯 目標パル</span> が生まれたStepと、<span style="color:#ffd54f;font-weight:bold;">起点パルが合流</span>したStepはゴールド色でハイライトされます。
     </p>
+
+    <div class="panel" id="route-favorites-panel" style="margin-bottom:16px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+        <h3 style="margin:0; font-size:14px; color:var(--accent);">⭐ お気に入りルート</h3>
+      </div>
+      <div id="route-favorites-list" style="margin-top:10px;"></div>
+    </div>
+
     <div class="panel">
       <div style="display:flex; flex-direction:column; gap:16px;">
         <div>
@@ -189,6 +197,17 @@
     <div class="confirm-actions">
       <button class="btn secondary" id="confirm-cancel-btn">キャンセル</button>
       <button class="btn danger" id="confirm-yes-btn">はい</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="prompt-backdrop">
+  <div class="modal confirm-modal" id="prompt-modal">
+    <p id="prompt-message"></p>
+    <input type="text" id="prompt-input" style="width:100%; margin-top:6px; background:var(--bg-alt); border:1px solid var(--line); color:var(--ink); padding:10px 12px; border-radius:8px; font-size:14px;">
+    <div class="confirm-actions">
+      <button class="btn secondary" id="prompt-cancel-btn">キャンセル</button>
+      <button class="btn" id="prompt-ok-btn">保存</button>
     </div>
   </div>
 </div>
