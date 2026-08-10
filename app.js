@@ -31,16 +31,31 @@ function childPowerFor(a, b){ return Math.floor((a.breeding_power + b.breeding_p
 function specialComboKey(aKey, bKey){
   return aKey < bKey ? (aKey + '|' + bKey) : (bKey + '|' + aKey);
 }
+// Pals that can never be produced by the plain averaging formula for a mixed pair:
+// self-breeding-only Pals (SELF_BREED_ONLY) plus every Pal that only ever appears as a
+// SPECIAL_COMBOS result (locked variants/results -- reachable only via their exact pair).
+let formulaExcluded = null;
+function getFormulaExcluded(){
+  if(formulaExcluded) return formulaExcluded;
+  formulaExcluded = new Set(SELF_BREED_ONLY);
+  for(const childKey of Object.values(SPECIAL_COMBOS)) formulaExcluded.add(childKey);
+  return formulaExcluded;
+}
 function getChild(aKey, bKey){
   const a = palByKey.get(aKey), b = palByKey.get(bKey);
   if(!a || !b) return null;
-  // Fixed/special combinations (fusion variants, Anubis, Grizzbolt, etc.) always override
-  // the averaging formula in-game. Check that table first.
+  // Two of the same species always produce that species (this also covers the 26
+  // self-breeding-only Pals, whose ONLY route is exactly this).
+  if(aKey === bKey) return aKey;
+  // Fixed/special combinations (fusion variants, Anubis, etc.) always override the
+  // averaging formula in-game. Check that table first.
   const special = SPECIAL_COMBOS[specialComboKey(aKey, bKey)];
   if(special) return special;
+  const excluded = getFormulaExcluded();
   const target = childPowerFor(a, b);
   let best = null, bestDist = Infinity;
   for(const p of palList){
+    if(excluded.has(p.key)) continue;
     const dist = Math.abs(p.breeding_power - target);
     if(dist < bestDist || (dist === bestDist && best && p.breeding_priority > best.breeding_priority)){
       bestDist = dist; best = p;
