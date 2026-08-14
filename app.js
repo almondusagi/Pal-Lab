@@ -321,6 +321,16 @@ function createPalPicker(container, {placeholder='パル名で検索', onChange=
 
   input.addEventListener('focus', ()=> renderOptions(input.value));
   input.addEventListener('input', ()=> renderOptions(input.value));
+  input.addEventListener('keydown', (e)=>{
+    if(e.key !== 'Enter') return;
+    e.preventDefault();
+    const firstOpt = dropdown.querySelector('.opt[data-key]');
+    if(firstOpt){
+      setValue(firstOpt.dataset.key);
+      dropdown.style.display='none';
+      input.value='';
+    }
+  });
   document.addEventListener('click', (e)=>{
     if(!container.contains(e.target)) dropdown.style.display='none';
   });
@@ -392,27 +402,37 @@ function createPalMultiPicker(container, {placeholder='パル名で検索', maxI
     });
   }
 
-  input.addEventListener('focus', ()=> renderOptions(input.value));
-  input.addEventListener('input', ()=> renderOptions(input.value));
-  document.addEventListener('click', (e)=>{
-    if(!container.contains(e.target)) dropdown.style.display='none';
-  });
-  dropdown.addEventListener('click', (e)=>{
-    const opt = e.target.closest('.opt');
-    if(!opt || !opt.dataset.key) return;
+  function addValue(key){
     if(values.length >= maxItems){
       dropdown.style.display='none';
       input.value='';
       showConfirm(`一度に指定できるのは最大${maxItems}匹までです。`, ()=>{});
       return;
     }
-    if(!values.includes(opt.dataset.key)){
-      values.push(opt.dataset.key);
+    if(!values.includes(key)){
+      values.push(key);
       renderChips();
       if(onChange) onChange(values.slice());
     }
     dropdown.style.display='none';
     input.value='';
+  }
+
+  input.addEventListener('focus', ()=> renderOptions(input.value));
+  input.addEventListener('input', ()=> renderOptions(input.value));
+  input.addEventListener('keydown', (e)=>{
+    if(e.key !== 'Enter') return;
+    e.preventDefault();
+    const firstOpt = dropdown.querySelector('.opt[data-key]');
+    if(firstOpt) addValue(firstOpt.dataset.key);
+  });
+  document.addEventListener('click', (e)=>{
+    if(!container.contains(e.target)) dropdown.style.display='none';
+  });
+  dropdown.addEventListener('click', (e)=>{
+    const opt = e.target.closest('.opt');
+    if(!opt || !opt.dataset.key) return;
+    addValue(opt.dataset.key);
   });
 
   renderChips();
